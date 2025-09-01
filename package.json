@@ -12,7 +12,7 @@
     "dotenv": "^16.3.1",
     "node-fetch": "^2.6.11",
     "uuid": "^9.0.0",
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.0",
     "useragent": "^3.0.0"
   }
 }
