@@ -35,12 +35,13 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const authMap = new Map();
 app.use(express.static('public'));
 
+// 認証ページ表示
 app.get('/auth', (req, res) => {
   const state = uuidv4();
   authMap.set(state, true);
 
-  const filePath = path.join(__dirname, 'public', 'auth.html');
-  let html = fs.readFileSync(filePath, 'utf-8');
+  const htmlPath = path.join(__dirname, 'public', 'auth.html');
+  let html = fs.readFileSync(htmlPath, 'utf-8');
 
   html = html
     .replace('{{CLIENT_ID}}', process.env.CLIENT_ID)
@@ -51,6 +52,7 @@ app.get('/auth', (req, res) => {
   res.send(html);
 });
 
+// OAuth2 コールバック
 app.get('/callback', async (req, res) => {
   const { code, state } = req.query;
   const ip =
@@ -63,6 +65,7 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
+    // トークン取得
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -80,38 +83,42 @@ app.get('/callback', async (req, res) => {
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
+    // ユーザー情報取得
     const userRes = await fetch('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
     const user = await userRes.json();
 
+    // Supabase 保存
     try {
-      const { error } = await supabase
-        .from('users')
-        .upsert({
-          id: user.id,
-          username: `${user.username}#${user.discriminator}`,
-          email: user.email ?? null,
-          ip: ip,
-        });
-
+      const { error } = await supabase.from('users').upsert({
+        id: user.id,
+        username: `${user.username}#${user.discriminator}`,
+        email: user.email ?? null,
+        ip: ip,
+      });
       if (error) console.error('Supabase 保存失敗:', error);
       else console.log('Supabase 保存成功:', user.username);
     } catch (dbErr) {
       console.error('Supabase処理エラー:', dbErr);
     }
 
-    const guild = await client.guilds.fetch(process.env.GUILD_ID);
-    await guild.roles.fetch();
+    // Discord ロール付与
+    try {
+      const guild = await client.guilds.fetch(process.env.GUILD_ID);
+      await guild.roles.fetch();
+      const member = await guild.members.fetch(user.id).catch(() => null);
+      const role = guild.roles.cache.get(process.env.ROLE_ID);
 
-    const member = await guild.members.fetch(user.id).catch(() => null);
-    const role = guild.roles.cache.get(process.env.ROLE_ID);
-
-    if (member && role) {
-      await member.roles.add(role);
-      console.log(`✅ ロール付与成功: ${user.username}#${user.discriminator}`);
+      if (member && role) {
+        await member.roles.add(role);
+        console.log(`✅ ロール付与成功: ${user.username}#${user.discriminator}`);
+      }
+    } catch (roleErr) {
+      console.error('ロール付与失敗:', roleErr);
     }
 
+    // Webhook送信
     try {
       await webhookClient.send({
         embeds: [
@@ -140,6 +147,7 @@ app.get('/callback', async (req, res) => {
   }
 });
 
+// /user-info API
 app.get('/user-info/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -151,10 +159,12 @@ app.get('/user-info/:id', async (req, res) => {
   }
 });
 
+// Discord Bot Ready
 client.once(Events.ClientReady, () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
+// /verify コマンド
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'verify') {
@@ -174,6 +184,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// スラッシュコマンド登録
 (async () => {
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
