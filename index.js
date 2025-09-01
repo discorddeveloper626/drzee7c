@@ -77,8 +77,20 @@ app.get('/callback', async (req, res) => {
         scope: 'identify email',
       }),
     });
-    const tokenData = await tokenRes.json();
+
+    const raw = await tokenRes.text();
+    console.log('🔎 Token response:', raw);
+
+    let tokenData;
+    try {
+      tokenData = JSON.parse(raw);
+    } catch {
+      console.error('❌ JSON パース失敗: Discord が HTML を返しました');
+      return res.sendFile(path.join(__dirname, 'public', 'error.html'));
+    }
+
     if (!tokenData.access_token) {
+      console.error('❌ access_token が取得できません:', tokenData);
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
@@ -170,7 +182,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const row = new ActionRowBuilder().addComponents(button);
 
-    // ここで即 reply
     await interaction.reply({ embeds: [embed], components: [row] });
   } catch (err) {
     console.error('Interaction エラー:', err);
