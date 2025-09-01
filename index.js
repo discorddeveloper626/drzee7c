@@ -159,7 +159,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'verify') {
     const embed = new EmbedBuilder()
-      .setTitle('🔐 認証 / Verify')
+      .setTitle('認証 ¦ Verify')
       .setDescription('下のボタンを押して認証をしてください。')
       .setColor(0x5865f2);
 
@@ -181,7 +181,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       body: [
         new SlashCommandBuilder()
           .setName('verify')
-          .setDescription('Discordアカウントで認証します')
+          .setDescription('認証パネルを設置します。')
           .toJSON(),
       ],
     });
