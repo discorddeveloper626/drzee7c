@@ -67,7 +67,10 @@ app.get('/callback', async (req, res) => {
   try {
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'MyDiscordBot (https://example.com, 1.0.0)',
+      },
       body: new URLSearchParams({
         client_id: process.env.CLIENT_ID,
         client_secret: process.env.CLIENT_SECRET,
@@ -78,25 +81,27 @@ app.get('/callback', async (req, res) => {
       }),
     });
 
-    const raw = await tokenRes.text();
-    console.log('🔎 Token response:', raw);
-
     let tokenData;
     try {
-      tokenData = JSON.parse(raw);
-    } catch {
-      console.error('❌ JSON パース失敗: Discord が HTML を返しました');
+      tokenData = await tokenRes.json();
+    } catch (e) {
+      const text = await tokenRes.text();
+      console.error('❌ JSON パース失敗: Discord が返した内容 →', text.slice(0, 500));
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
     if (!tokenData.access_token) {
-      console.error('❌ access_token が取得できません:', tokenData);
+      console.error('❌ トークン取得失敗:', tokenData);
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
     const userRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        'User-Agent': 'MyDiscordBot (https://example.com, 1.0.0)',
+      },
     });
+
     const user = await userRes.json();
 
     // Supabase 保存
