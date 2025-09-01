@@ -155,30 +155,27 @@ client.once(Events.ClientReady, () => {
 // /verify コマンド
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName === 'verify') {
-    try {
-      const embed = new EmbedBuilder()
-        .setTitle('認証 ¦ Verify')
-        .setDescription('下のボタンを押して認証をしてください。')
-        .setColor(0x5865f2);
+  if (interaction.commandName !== 'verify') return;
 
-      const button = new ButtonBuilder()
-        .setLabel('✅｜認証 / Verify')
-        .setStyle(ButtonStyle.Link)
-        .setURL(`https://${process.env.DOMAIN}/auth`);
+  try {
+    const embed = new EmbedBuilder()
+      .setTitle('認証 ¦ Verify')
+      .setDescription('下のボタンを押して認証してください。')
+      .setColor(0x5865f2);
 
-      const row = new ActionRowBuilder().addComponents(button);
+    const button = new ButtonBuilder()
+      .setLabel('✅｜認証 / Verify')
+      .setStyle(ButtonStyle.Link)
+      .setURL(`https://${process.env.DOMAIN}/auth`);
 
-      await interaction.reply({ 
-        embeds: [embed], 
-        components: [row]
-      });
-    } catch (err) {
-      console.error('Interaction エラー:', err);
-    }
+    const row = new ActionRowBuilder().addComponents(button);
+
+    // ここで即 reply
+    await interaction.reply({ embeds: [embed], components: [row] });
+  } catch (err) {
+    console.error('Interaction エラー:', err);
   }
 });
-
 
 // スラッシュコマンド登録
 (async () => {
