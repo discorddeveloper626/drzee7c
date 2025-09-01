@@ -171,14 +171,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       await interaction.reply({ 
         embeds: [embed], 
-        components: [row],
-        flags: 64 // ephemeral メッセージ
+        components: [row]
       });
     } catch (err) {
       console.error('Interaction エラー:', err);
     }
   }
 });
+
 
 // スラッシュコマンド登録
 (async () => {
