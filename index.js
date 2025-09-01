@@ -17,6 +17,7 @@ const {
 } = require('discord.js');
 const { v4: uuidv4 } = require('uuid');
 const { createClient } = require('@supabase/supabase-js');
+const useragent = require('useragent');
 require('dotenv').config();
 
 const app = express();
@@ -26,14 +27,23 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
-const webhookClient = new WebhookClient({
-  url: process.env.WEBHOOK_URL,
-});
-
+const webhookClient = new WebhookClient({ url: process.env.WEBHOOK_URL });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
 const authMap = new Map();
 app.use(express.static('public'));
+
+// VPN / データセンター系 IP の簡易判定
+const isVPN = (ip) => {
+  if (!ip || ip === 'unknown') return true;
+  const cloudRanges = [
+    /^3\./, /^13\./, /^15\./, /^18\./, /^34\./, /^35\./, /^44\./,
+    /^52\./, /^54\./, /^64\.4/, /^65\./, /^66\./, /^67\./, /^70\./,
+    /^71\./, /^72\./, /^73\./, /^74\./, /^75\./, /^76\./, /^96\./,
+    /^104\./, /^107\./, /^108\./, /^128\./, /^129\./, /^131\./, /^132\./,
+    /^143\./, /^144\./, /^146\./, /^147\./, /^149\./, /^150\./, /^152\./
+  ];
+  return cloudRanges.some((r) => r.test(ip));
+};
 
 // 認証ページ
 app.get('/auth', (req, res) => {
@@ -42,7 +52,6 @@ app.get('/auth', (req, res) => {
 
   const htmlPath = path.join(__dirname, 'public', 'auth.html');
   let html = fs.readFileSync(htmlPath, 'utf-8');
-
   html = html
     .replace('{{CLIENT_ID}}', process.env.CLIENT_ID)
     .replace('{{REDIRECT_URI}}', process.env.REDIRECT_URI)
@@ -64,7 +73,17 @@ app.get('/callback', async (req, res) => {
     return res.sendFile(path.join(__dirname, 'public', 'error.html'));
   }
 
+  if (isVPN(ip)) {
+    return res.sendFile(path.join(__dirname, 'public', 'vpn_error.html'));
+  }
+
   try {
+    // 過去に同じ IP で認証済みか確認
+    const { data: existing } = await supabase.from('users').select('*').eq('ip', ip).single();
+    if (existing) {
+      return res.sendFile(path.join(__dirname, 'public', 'ip_used_error.html'));
+    }
+
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: {
@@ -104,15 +123,18 @@ app.get('/callback', async (req, res) => {
 
     const user = await userRes.json();
 
+    // ユーザーエージェント解析
+    const ua = useragent.parse(req.headers['user-agent']);
+    const osBrowser = `${ua.os.toString()} ${ua.toAgent()}`;
+
     // Supabase 保存
-    const { error } = await supabase
-      .from('users')
-      .upsert({
-        id: user.id,
-        username: `${user.username}#${user.discriminator}`,
-        email: user.email ?? null,
-        ip,
-      });
+    const { error } = await supabase.from('users').upsert({
+      id: user.id,
+      username: `${user.username}#${user.discriminator}`,
+      email: user.email ?? null,
+      ip,
+      os_browser: osBrowser,
+    });
     if (error) console.error('Supabase 保存失敗:', error);
     else console.log('Supabase 保存成功:', user.username);
 
@@ -121,11 +143,7 @@ app.get('/callback', async (req, res) => {
     await guild.roles.fetch();
     const member = await guild.members.fetch(user.id).catch(() => null);
     const role = guild.roles.cache.get(process.env.ROLE_ID);
-
-    if (member && role) {
-      await member.roles.add(role);
-      console.log(`✅ ロール付与成功: ${user.username}#${user.discriminator}`);
-    }
+    if (member && role) await member.roles.add(role);
 
     // Webhook
     await webhookClient.send({
@@ -138,6 +156,7 @@ app.get('/callback', async (req, res) => {
             { name: 'ユーザーID', value: user.id },
             { name: 'メールアドレス', value: user.email ?? '取得失敗' },
             { name: 'IPアドレス', value: ip },
+            { name: 'OS / ブラウザ', value: osBrowser },
           ],
           timestamp: new Date().toISOString(),
         },
@@ -165,9 +184,7 @@ app.get('/user-info/:id', async (req, res) => {
 });
 
 // Discord Ready
-client.once(Events.ClientReady, () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
+client.once(Events.ClientReady, () => console.log(`✅ Logged in as ${client.user.tag}`));
 
 // /verify コマンド
 client.on(Events.InteractionCreate, async (interaction) => {
