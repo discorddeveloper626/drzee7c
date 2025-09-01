@@ -35,7 +35,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const authMap = new Map();
 app.use(express.static('public'));
 
-// 認証ページ表示
+// 認証ページ
 app.get('/auth', (req, res) => {
   const state = uuidv4();
   authMap.set(state, true);
@@ -65,7 +65,6 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // トークン取得
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -83,61 +82,50 @@ app.get('/callback', async (req, res) => {
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
-    // ユーザー情報取得
     const userRes = await fetch('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
     const user = await userRes.json();
 
     // Supabase 保存
-    try {
-      const { error } = await supabase.from('users').upsert({
+    const { error } = await supabase
+      .from('users')
+      .upsert({
         id: user.id,
         username: `${user.username}#${user.discriminator}`,
         email: user.email ?? null,
-        ip: ip,
+        ip,
       });
-      if (error) console.error('Supabase 保存失敗:', error);
-      else console.log('Supabase 保存成功:', user.username);
-    } catch (dbErr) {
-      console.error('Supabase処理エラー:', dbErr);
-    }
+    if (error) console.error('Supabase 保存失敗:', error);
+    else console.log('Supabase 保存成功:', user.username);
 
     // Discord ロール付与
-    try {
-      const guild = await client.guilds.fetch(process.env.GUILD_ID);
-      await guild.roles.fetch();
-      const member = await guild.members.fetch(user.id).catch(() => null);
-      const role = guild.roles.cache.get(process.env.ROLE_ID);
+    const guild = await client.guilds.fetch(process.env.GUILD_ID);
+    await guild.roles.fetch();
+    const member = await guild.members.fetch(user.id).catch(() => null);
+    const role = guild.roles.cache.get(process.env.ROLE_ID);
 
-      if (member && role) {
-        await member.roles.add(role);
-        console.log(`✅ ロール付与成功: ${user.username}#${user.discriminator}`);
-      }
-    } catch (roleErr) {
-      console.error('ロール付与失敗:', roleErr);
+    if (member && role) {
+      await member.roles.add(role);
+      console.log(`✅ ロール付与成功: ${user.username}#${user.discriminator}`);
     }
 
-    // Webhook送信
-    try {
-      await webhookClient.send({
-        embeds: [
-          {
-            title: '🎊認証完了',
-            color: 0x00ff00,
-            fields: [
-              { name: 'ユーザー名', value: `${user.username}#${user.discriminator}` },
-              { name: 'ユーザーID', value: user.id },
-              { name: 'メールアドレス', value: user.email ?? '取得失敗' },
-              { name: 'IPアドレス', value: ip },
-            ],
-            timestamp: new Date().toISOString(),
-          },
-        ],
-      });
-    } catch (err) {
-      console.error('Webhook送信失敗:', err);
-    }
+    // Webhook
+    await webhookClient.send({
+      embeds: [
+        {
+          title: '🎊認証完了',
+          color: 0x00ff00,
+          fields: [
+            { name: 'ユーザー名', value: `${user.username}#${user.discriminator}` },
+            { name: 'ユーザーID', value: user.id },
+            { name: 'メールアドレス', value: user.email ?? '取得失敗' },
+            { name: 'IPアドレス', value: ip },
+          ],
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    });
 
     res.sendFile(path.join(__dirname, 'public', 'success.html'));
     authMap.delete(state);
@@ -147,7 +135,7 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// /user-info API
+// /user-info
 app.get('/user-info/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -159,7 +147,7 @@ app.get('/user-info/:id', async (req, res) => {
   }
 });
 
-// Discord Bot Ready
+// Discord Ready
 client.once(Events.ClientReady, () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
@@ -168,19 +156,24 @@ client.once(Events.ClientReady, () => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'verify') {
-    const embed = new EmbedBuilder()
-      .setTitle('認証 ¦ Verify')
-      .setDescription('下のボタンを押して認証をしてください。')
-      .setColor(0x5865f2);
+    try {
+      await interaction.deferReply({ ephemeral: true }); // 応答を遅延させる
+      const embed = new EmbedBuilder()
+        .setTitle('認証 ¦ Verify')
+        .setDescription('下のボタンを押して認証をしてください。')
+        .setColor(0x5865f2);
 
-    const button = new ButtonBuilder()
-      .setLabel('✅｜認証 / Verify')
-      .setStyle(ButtonStyle.Link)
-      .setURL(`https://${process.env.DOMAIN}/auth`);
+      const button = new ButtonBuilder()
+        .setLabel('✅｜認証 / Verify')
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://${process.env.DOMAIN}/auth`);
 
-    const row = new ActionRowBuilder().addComponents(button);
+      const row = new ActionRowBuilder().addComponents(button);
 
-    await interaction.reply({ embeds: [embed], components: [row] });
+      await interaction.editReply({ embeds: [embed], components: [row] });
+    } catch (err) {
+      console.error('Interaction エラー:', err);
+    }
   }
 });
 
