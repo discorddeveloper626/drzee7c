@@ -157,7 +157,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === 'verify') {
     try {
-      await interaction.deferReply({ ephemeral: true }); // 応答を遅延させる
       const embed = new EmbedBuilder()
         .setTitle('認証 ¦ Verify')
         .setDescription('下のボタンを押して認証をしてください。')
@@ -170,7 +169,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const row = new ActionRowBuilder().addComponents(button);
 
-      await interaction.editReply({ embeds: [embed], components: [row] });
+      await interaction.reply({ 
+        embeds: [embed], 
+        components: [row],
+        flags: 64 // ephemeral メッセージ
+      });
     } catch (err) {
       console.error('Interaction エラー:', err);
     }
