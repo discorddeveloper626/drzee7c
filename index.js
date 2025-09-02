@@ -32,7 +32,6 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const authMap = new Map();
 app.use(express.static('public'));
 
-// VPN / データセンター系 IP の簡易判定
 const isVPN = (ip) => {
   if (!ip || ip === 'unknown') return true;
   const cloudRanges = [
@@ -45,7 +44,6 @@ const isVPN = (ip) => {
   return cloudRanges.some((r) => r.test(ip));
 };
 
-// 認証ページ
 app.get('/auth', (req, res) => {
   const state = uuidv4();
   authMap.set(state, true);
@@ -53,15 +51,14 @@ app.get('/auth', (req, res) => {
   const htmlPath = path.join(__dirname, 'public', 'auth.html');
   let html = fs.readFileSync(htmlPath, 'utf-8');
   html = html
-    .replace('{{CLIENT_ID}}', process.env.CLIENT_ID)
-    .replace('{{REDIRECT_URI}}', process.env.REDIRECT_URI)
-    .replace('{{STATE}}', state)
-    .replace('{{SCOPE}}', 'identify%20email');
+    .replaceAll('{{CLIENT_ID}}', process.env.CLIENT_ID)
+    .replaceAll('{{REDIRECT_URI}}', process.env.REDIRECT_URI)
+    .replaceAll('{{STATE}}', state)
+    .replaceAll('{{SCOPE}}', 'identify%20email');
 
   res.send(html);
 });
 
-// OAuth2 コールバック
 app.get('/callback', async (req, res) => {
   const { code, state } = req.query;
   const ip =
@@ -78,7 +75,6 @@ app.get('/callback', async (req, res) => {
   }
 
   try {
-    // 過去に同じ IP で認証済みか確認
     const { data: existing } = await supabase.from('users').select('*').eq('ip', ip).single();
     if (existing) {
       return res.sendFile(path.join(__dirname, 'public', 'ip_used_error.html'));
@@ -100,12 +96,12 @@ app.get('/callback', async (req, res) => {
       }),
     });
 
+    const rawToken = await tokenRes.text();
     let tokenData;
     try {
-      tokenData = await tokenRes.json();
+      tokenData = JSON.parse(rawToken);
     } catch (e) {
-      const text = await tokenRes.text();
-      console.error('❌ JSON パース失敗: Discord が返した内容 →', text.slice(0, 500));
+      console.error('❌ JSON パース失敗: Discord が返した内容 →', rawToken.slice(0, 500));
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
@@ -122,41 +118,40 @@ app.get('/callback', async (req, res) => {
     });
 
     const user = await userRes.json();
+    const displayName = user.global_name ?? `${user.username}${user.discriminator ? `#${user.discriminator}` : ''}`;
 
-    // ユーザーエージェント解析
     const ua = useragent.parse(req.headers['user-agent']);
     const osBrowser = `${ua.os.toString()} ${ua.toAgent()}`;
 
-    // Supabase 保存
     const { error } = await supabase.from('users').upsert({
       id: user.id,
-      username: `${user.username}#${user.discriminator}`,
+      username: displayName,
       email: user.email ?? null,
       ip,
       os_browser: osBrowser,
     });
-    if (error) console.error('Supabase 保存失敗:', error);
-    else console.log('Supabase 保存成功:', user.username);
+    if (error) console.error('❌ Supabase 保存失敗:', error);
+    else console.log('✅ Supabase 保存成功:', displayName);
 
-    // Discord ロール付与
     const guild = await client.guilds.fetch(process.env.GUILD_ID);
     await guild.roles.fetch();
     const member = await guild.members.fetch(user.id).catch(() => null);
     const role = guild.roles.cache.get(process.env.ROLE_ID);
-    if (member && role) await member.roles.add(role);
+    if (member && role) {
+      await member.roles.add(role);
+    }
 
-    // Webhook
     await webhookClient.send({
       embeds: [
         {
-          title: '🎊認証完了',
+          title: '認証完了',
           color: 0x00ff00,
           fields: [
-            { name: 'ユーザー名', value: `${user.username}#${user.discriminator}` },
-            { name: 'ユーザーID', value: user.id },
-            { name: 'メールアドレス', value: user.email ?? '取得失敗' },
-            { name: 'IPアドレス', value: ip },
-            { name: 'OS / ブラウザ', value: osBrowser },
+            { name: '👤｜ユーザー名', value: displayName },
+            { name: '🆔｜ユーザーID', value: user.id },
+            { name: '📩｜メールアドレス', value: user.email ?? '取得失敗' },
+            { name: '📍｜IPアドレス', value: ip },
+            { name: '🌏｜OS / ブラウザ', value: osBrowser },
           ],
           timestamp: new Date().toISOString(),
         },
@@ -171,22 +166,8 @@ app.get('/callback', async (req, res) => {
   }
 });
 
-// /user-info
-app.get('/user-info/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const { data, error } = await supabase.from('users').select('*').eq('id', id).single();
-    if (error || !data) return res.status(404).json({ error: 'ユーザー情報が見つかりません' });
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: '内部エラー' });
-  }
-});
-
-// Discord Ready
 client.once(Events.ClientReady, () => console.log(`✅ Logged in as ${client.user.tag}`));
 
-// /verify コマンド
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'verify') return;
@@ -210,7 +191,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// スラッシュコマンド登録
 (async () => {
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
