@@ -53,7 +53,7 @@ app.get('/auth', (req, res) => {
   let html = fs.readFileSync(htmlPath, 'utf-8');
   html = html
     .replaceAll('{{CLIENT_ID}}', process.env.CLIENT_ID)
-    .replaceAll('{{REDIRECT_URI}}', process.env.REDIRECT_URI)
+    .replaceAll('{{REDIRECT_URI}}', encodeURIComponent(process.env.REDIRECT_URI))
     .replaceAll('{{STATE}}', state)
     .replaceAll('{{SCOPE}}', 'identify%20email');
 
@@ -63,10 +63,7 @@ app.get('/auth', (req, res) => {
 // OAuth2 コールバック
 app.get('/callback', async (req, res) => {
   const { code, state } = req.query;
-  const ip =
-    req.headers['x-forwarded-for']?.split(',').shift() ||
-    req.socket?.remoteAddress ||
-    'unknown';
+  const ip = req.headers['x-forwarded-for']?.split(',').shift() || req.socket?.remoteAddress || 'unknown';
 
   if (!code || !state || !authMap.has(state)) {
     return res.sendFile(path.join(__dirname, 'public', 'error.html'));
@@ -80,7 +77,6 @@ app.get('/callback', async (req, res) => {
     const { data: existing } = await supabase.from('users').select('*').eq('ip', ip).single();
     if (existing) return res.sendFile(path.join(__dirname, 'public', 'ip_used_error.html'));
 
-    // Dev Portal に存在するか確認
     if (!process.env.CLIENT_ID || !process.env.CLIENT_SECRET || !process.env.REDIRECT_URI) {
       console.error('❌ OAuth2 環境変数未設定');
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
@@ -91,7 +87,7 @@ app.get('/callback', async (req, res) => {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36',
+        'User-Agent': 'DiscordBot (https://drzee7c.onrender.com, 1.0.0)',
       },
       body: new URLSearchParams({
         client_id: process.env.CLIENT_ID,
@@ -108,7 +104,7 @@ app.get('/callback', async (req, res) => {
     try {
       tokenData = JSON.parse(rawToken);
     } catch (e) {
-      console.error('❌ JSON パース失敗: Discord が返した内容 →', rawToken.slice(0, 500));
+      console.error('❌ JSON パース失敗 →', rawToken.slice(0, 500));
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
@@ -120,10 +116,9 @@ app.get('/callback', async (req, res) => {
     const userRes = await fetch('https://discord.com/api/users/@me', {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'User-Agent': 'DiscordBot (https://drzee7c.onrender.com, 1.0.0)',
       },
     });
-
     const user = await userRes.json();
     const displayName = user.global_name ?? `${user.username}${user.discriminator ? `#${user.discriminator}` : ''}`;
 
@@ -171,8 +166,10 @@ app.get('/callback', async (req, res) => {
   }
 });
 
+// Discord ready
 client.once(Events.ClientReady, () => console.log(`✅ Logged in as ${client.user.tag}`));
 
+// /verify コマンド
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName !== 'verify') return;
@@ -186,7 +183,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const button = new ButtonBuilder()
       .setLabel('✅｜認証 / Verify')
       .setStyle(ButtonStyle.Link)
-      .setURL(`https://${process.env.DOMAIN}/auth`);
+      .setURL(`${process.env.REDIRECT_URI.replace('/callback','/auth')}`);
 
     const row = new ActionRowBuilder().addComponents(button);
 
@@ -196,6 +193,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// コマンド登録
 (async () => {
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
