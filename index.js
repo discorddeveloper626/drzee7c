@@ -44,6 +44,7 @@ const isVPN = (ip) => {
   return cloudRanges.some((r) => r.test(ip));
 };
 
+// 認証ページ
 app.get('/auth', (req, res) => {
   const state = uuidv4();
   authMap.set(state, true);
@@ -59,6 +60,7 @@ app.get('/auth', (req, res) => {
   res.send(html);
 });
 
+// OAuth2 コールバック
 app.get('/callback', async (req, res) => {
   const { code, state } = req.query;
   const ip =
@@ -76,15 +78,20 @@ app.get('/callback', async (req, res) => {
 
   try {
     const { data: existing } = await supabase.from('users').select('*').eq('ip', ip).single();
-    if (existing) {
-      return res.sendFile(path.join(__dirname, 'public', 'ip_used_error.html'));
+    if (existing) return res.sendFile(path.join(__dirname, 'public', 'ip_used_error.html'));
+
+    // Dev Portal に存在するか確認
+    if (!process.env.CLIENT_ID || !process.env.CLIENT_SECRET || !process.env.REDIRECT_URI) {
+      console.error('❌ OAuth2 環境変数未設定');
+      return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'MyDiscordBot (https://example.com, 1.0.0)',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36',
       },
       body: new URLSearchParams({
         client_id: process.env.CLIENT_ID,
@@ -113,7 +120,7 @@ app.get('/callback', async (req, res) => {
     const userRes = await fetch('https://discord.com/api/users/@me', {
       headers: {
         Authorization: `Bearer ${tokenData.access_token}`,
-        'User-Agent': 'MyDiscordBot (https://example.com, 1.0.0)',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
       },
     });
 
@@ -137,9 +144,7 @@ app.get('/callback', async (req, res) => {
     await guild.roles.fetch();
     const member = await guild.members.fetch(user.id).catch(() => null);
     const role = guild.roles.cache.get(process.env.ROLE_ID);
-    if (member && role) {
-      await member.roles.add(role);
-    }
+    if (member && role) await member.roles.add(role);
 
     await webhookClient.send({
       embeds: [
