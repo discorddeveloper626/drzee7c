@@ -84,6 +84,7 @@ app.get('/callback', async (req, res) => {
       return res.sendFile(path.join(__dirname, 'public', 'ip_used_error.html'));
     }
 
+    // Discord トークン取得
     const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
       headers: {
@@ -100,12 +101,12 @@ app.get('/callback', async (req, res) => {
       }),
     });
 
+    const tokenText = await tokenRes.text();
     let tokenData;
     try {
-      tokenData = await tokenRes.json();
-    } catch (e) {
-      const text = await tokenRes.text();
-      console.error('❌ JSON パース失敗: Discord が返した内容 →', text.slice(0, 500));
+      tokenData = JSON.parse(tokenText);
+    } catch {
+      console.error('❌ JSON パース失敗:', tokenText.slice(0, 500));
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
@@ -114,13 +115,10 @@ app.get('/callback', async (req, res) => {
       return res.sendFile(path.join(__dirname, 'public', 'error.html'));
     }
 
+    // ユーザー情報取得
     const userRes = await fetch('https://discord.com/api/users/@me', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-        'User-Agent': 'MyDiscordBot (https://example.com, 1.0.0)',
-      },
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
-
     const user = await userRes.json();
 
     // ユーザーエージェント解析
