@@ -53,7 +53,7 @@ app.get('/auth', (req, res) => {
   let html = fs.readFileSync(htmlPath, 'utf-8');
   html = html
     .replaceAll('{{CLIENT_ID}}', process.env.CLIENT_ID)
-    .replaceAll('{{REDIRECT_URI}}', encodeURIComponent(process.env.REDIRECT_URI))
+    .replaceAll('{{REDIRECT_URI}}', process.env.REDIRECT_URI)
     .replaceAll('{{STATE}}', state)
     .replaceAll('{{SCOPE}}', 'identify%20email');
 
